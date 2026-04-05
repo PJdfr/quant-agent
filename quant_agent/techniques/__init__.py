@@ -14,4 +14,9 @@ from . import (
     factor_covariance,
     factor_rotation,
     regime_backtest,
+    curvature_penalized_fit,
+    geodesic_macro_regression,
+    js_edge_persistence,
+    chernoff_classifier,
+    volume_profile_manifold,
 )

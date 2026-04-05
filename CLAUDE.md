@@ -148,3 +148,64 @@ Always structure responses as:
 
 **Covariance quality assessment**
 → 2 (MP denoising) → 11 (ridge precision) → 13 (factor model) → compare condition numbers
+
+---
+
+## Techniques 16–20: Curvature, Macro Geometry & Execution
+
+### 16. Curvature-Penalized Fitting
+- **What it does**: adds κ(θ) as a regulariser to the fitting objective so the optimizer avoids highly-curved regions of the statistical manifold
+- **Key output**: θ* with/without penalty, κ at each solution, fragility throttle size_t = 1/(1+κ)
+- **When to use**: any rolling model calibration — prevents fragile parameter choices in mixture zones
+- **MCP tool**: `curvature_penalized_fit`
+
+### 17. Geodesic Macro Regression
+- **What it does**: regresses the full distribution (not just its mean) on macro covariates via an exponential-map geodesic; trades when observed distribution deviates geometrically from macro-implied
+- **Key output**: B_hat (macro→distribution sensitivities), δ_t deviation score, directional signals
+- **When to use**: macro-driven strategies, cross-asset relative value, identifying macro-pricing gaps
+- **MCP tool**: `geodesic_macro_regression`
+
+### 18. JS Divergence Edge Persistence
+- **What it does**: measures the geometric gap ε_s = √D_JS(p_s, p_base) between signal state and baseline distributions; tracks decay over time as an edge-health monitor
+- **Key output**: ε_s time series, alarm_decay flags, across-state confusion matrix C_{s,s'}
+- **When to use**: any state-conditional signal — continuously verify the edge is geometrically alive
+- **MCP tool**: `js_edge_persistence`
+
+### 19. Chernoff Information Classifier
+- **What it does**: derives the optimal Bayes classifier boundary between two regimes (calm/stress) using Chernoff information; sets principled LLR thresholds τ_exit and τ_entry
+- **Key output**: C (Chernoff info), s* (boundary tilt), Bayes error, LLR series, alarm flags
+- **When to use**: regime entry/exit rules, stress detection, risk-limit triggers
+- **MCP tool**: `chernoff_classifier`
+
+### 20. Volume Profile Manifold
+- **What it does**: treats intraday volume profiles as probability distributions; uses Fisher-Rao geometry to compare today's partial-day shape to a historical library and infer execution regime
+- **Key output**: regime label (open-heavy / close-heavy / lunch-dip / midday-active), exec_weights
+- **When to use**: VWAP/TWAP scheduling, child-order allocation, intraday liquidity forecasting
+- **MCP tool**: `volume_profile_manifold`
+
+---
+
+## Master Technique Table (all 20)
+
+| # | Name | Signal/Output | When |
+|---|------|--------------|------|
+| 1 | Manifold Tube | δ_t, tube exit | Signal drift |
+| 2 | Marchenko-Pastur | Clean Σ | Before optimization |
+| 3 | Shape Correlation | Tail co-move matrix | Hedge selection |
+| 4 | Esscher Tilt | θ* crash premium | Options regime |
+| 5 | α-Divergence Alarm | D_α, risk throttle | Model monitoring |
+| 6 | Curvature Throttle | κ, w_risk | Model trust |
+| 7 | Grassmann Rotation | Θ_t rotation | Factor basis shift |
+| 8 | Correlation Clustering | Regime labels | Risk-on/off |
+| 9 | Path Speed | v_t, a_t, κ_t | Change-point |
+| 10 | Option Density | FR dist, tail shape | Vol regime |
+| 11 | Ridge Precision | Θ̂_λ, MV weights | Portfolio construction |
+| 12 | Partial Correlation | Network, hedges | Direct dependencies |
+| 13 | Factor Covariance | Σ̂_exp, R² | Large universe Σ |
+| 14 | Factor Rotation | Orthog. factors | Clean attribution |
+| 15 | Regime Backtest | Skill, EW | Signal validation |
+| 16 | Curvature-Penalized Fit | θ*, size_t | Stable calibration |
+| 17 | Geodesic Macro Reg. | δ_t, B_hat | Macro mispricing |
+| 18 | JS Edge Persistence | ε_s, decay alarm | Edge health |
+| 19 | Chernoff Classifier | C, τ, LLR | Regime thresholds |
+| 20 | Volume Profile Manifold | Regime, exec_weights | Execution scheduling |
