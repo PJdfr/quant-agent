@@ -1,5 +1,32 @@
 # Quant Agent — Knowledge Base
 
+## Repository Structure
+
+```
+quant_agent/techniques/
+├── monitoring/        # Ongoing model health: drift, decay, speed
+│   ├── manifold_tube, alpha_divergence, curvature_throttle
+│   ├── js_edge_persistence, path_speed
+├── regime/            # Market state detection & validation
+│   ├── correlation_clustering, grassmann_rotation
+│   ├── chernoff_classifier, regime_backtest
+├── covariance/        # Dependence structure estimation
+│   ├── marchenko_pastur, shape_correlation, partial_correlation
+│   ├── factor_covariance, factor_rotation, ridge_precision
+├── tail_and_options/  # Crash premium, vol surface, implied tail
+│   ├── esscher_tilt, option_density
+└── fitting/           # Robust calibration, macro regression, execution
+    ├── curvature_penalized_fit, geodesic_macro_regression
+    └── volume_profile_manifold
+
+skills/
+├── monitoring/        # Skill files for monitoring techniques
+├── regime/            # Skill files for regime techniques
+├── covariance/        # Skill files for covariance techniques
+├── tail_and_options/  # Skill files for tail & options techniques
+└── fitting/           # Skill files for fitting techniques
+```
+
 You are a specialist quant agent with expertise in **information geometry applied to finance**.
 Your role is to apply the 10 techniques below to analyse signals, portfolios, and market data.
 
@@ -185,27 +212,61 @@ Always structure responses as:
 
 ---
 
-## Master Technique Table (all 20)
+## Master Technique Table (all 23)
 
-| # | Name | Signal/Output | When |
-|---|------|--------------|------|
-| 1 | Manifold Tube | δ_t, tube exit | Signal drift |
-| 2 | Marchenko-Pastur | Clean Σ | Before optimization |
-| 3 | Shape Correlation | Tail co-move matrix | Hedge selection |
-| 4 | Esscher Tilt | θ* crash premium | Options regime |
-| 5 | α-Divergence Alarm | D_α, risk throttle | Model monitoring |
-| 6 | Curvature Throttle | κ, w_risk | Model trust |
-| 7 | Grassmann Rotation | Θ_t rotation | Factor basis shift |
-| 8 | Correlation Clustering | Regime labels | Risk-on/off |
-| 9 | Path Speed | v_t, a_t, κ_t | Change-point |
-| 10 | Option Density | FR dist, tail shape | Vol regime |
-| 11 | Ridge Precision | Θ̂_λ, MV weights | Portfolio construction |
-| 12 | Partial Correlation | Network, hedges | Direct dependencies |
-| 13 | Factor Covariance | Σ̂_exp, R² | Large universe Σ |
-| 14 | Factor Rotation | Orthog. factors | Clean attribution |
-| 15 | Regime Backtest | Skill, EW | Signal validation |
-| 16 | Curvature-Penalized Fit | θ*, size_t | Stable calibration |
-| 17 | Geodesic Macro Reg. | δ_t, B_hat | Macro mispricing |
-| 18 | JS Edge Persistence | ε_s, decay alarm | Edge health |
-| 19 | Chernoff Classifier | C, τ, LLR | Regime thresholds |
-| 20 | Volume Profile Manifold | Regime, exec_weights | Execution scheduling |
+| # | Name | Signal/Output | When | Category |
+|---|------|--------------|------|----------|
+| 1 | Manifold Tube | δ_t, tube exit | Signal drift | monitoring |
+| 2 | Marchenko-Pastur | Clean Σ | Before optimization | covariance |
+| 3 | Shape Correlation | Tail co-move matrix | Hedge selection | covariance |
+| 4 | Esscher Tilt | θ* crash premium | Options regime | tail_and_options |
+| 5 | α-Divergence Alarm | D_α, risk throttle | Model monitoring | monitoring |
+| 6 | Curvature Throttle | κ, w_risk | Model trust | monitoring |
+| 7 | Grassmann Rotation | Θ_t rotation | Factor basis shift | regime |
+| 8 | Correlation Clustering | Regime labels | Risk-on/off | regime |
+| 9 | Path Speed | v_t, a_t, κ_t, flag | Change-point | monitoring |
+| 10 | Option Density | FR dist, tail shape | Vol regime | tail_and_options |
+| 11 | Ridge Precision | Θ̂_λ, MV weights | Portfolio construction | covariance |
+| 12 | Partial Correlation | Network, hedges | Direct dependencies | covariance |
+| 13 | Factor Covariance | Σ̂_exp, R² | Large universe Σ | covariance |
+| 14 | Factor Rotation | Orthog. factors | Clean attribution | covariance |
+| 15 | Regime Backtest | Skill, EW | Signal validation | regime |
+| 16 | Curvature-Penalized Fit | θ*, size_t | Stable calibration | fitting |
+| 17 | Geodesic Macro Reg. | δ_t, B_hat | Macro mispricing | fitting |
+| 18 | JS Edge Persistence | ε_s, Δμ, Δq_α, I(x) | Edge health + map | monitoring |
+| 19 | Chernoff Classifier | C, τ, LLR | Regime thresholds | regime |
+| 20 | Volume Profile Manifold | Regime, exec_weights | Execution scheduling | fitting |
+| 21 | Amari–Chentsov Tensor | \|C(θ;u)\|, size_t | Hidden tail risk | monitoring |
+| 22 | Skew Dependence Map | R_skew, p_t, κ_t | Tail-linked correlation | tail_and_options |
+| 23 | Mutual Information | Î(X;Y), ℓ̂(A_j) | Signal edge strength | monitoring |
+
+---
+
+## Techniques 21–23 (new)
+
+### 21. Amari–Chentsov Cubic Tensor (`monitoring/amari_chentsov.py`)
+- **What it does**: computes the third-order tensor T_ijk = E[s_i s_j s_k] capturing cubic asymmetry of the likelihood surface; finds directions where Fisher information is small but cubic correction |C(θ;u)| is large = hidden tail exposure
+- **Key output**: cubic_score |C(θ;u)|, fisher_quad, hidden_tail flag, size_t = size_max/(1+c|C|)
+- **When to use**: any signal that looks safe by second-order metrics but may have asymmetric tail exposure
+
+### 22. Implied Skew Dependence Map (`tail_and_options/skew_dependence.py`)
+- **What it does**: treats implied skew changes as forward-looking signals of joint tail repricing; builds R_skew = Corr(z_i, z_j) from standardised skew shocks; blends with realized correlation; computes tail-linking pressure p_t and cross-asset clustering κ_t
+- **Key output**: skew_corr (R_skew), blended_corr R̂(α), tail_pressure p_t, clustering κ_t
+- **When to use**: dependence estimation for tail scenarios, detecting coordinated skew steepening, stress-aware portfolio construction
+
+### 23. Mutual Information Scanner (`monitoring/mutual_information.py`)
+- **What it does**: estimates I(X;Y) = H(Y) − H(Y|X) via bin-based plug-in estimator; produces local MI ℓ̂(A_j) per state region and rolling MI time series to track decay
+- **Key output**: global MI (nats), local_mi per state bin, rolling_mi time series, joint_hist
+- **When to use**: measuring non-linear predictive edge, identifying which state regions carry the most information about future outcomes, detecting signal decay
+
+---
+
+## Key adaptations (techniques 9 and 18)
+
+**Technique 9 — Path Speed**: now supports `mode='histogram'` for non-parametric FR distance
+d_FR(p, q) = 2 arccos(Σ_k √(p_k q_k)) and adds a quantile-based `alarm_flag` using
+flag_t = 1{D_t > Quantile_{1-α}(D_{t-M,...,t-1})}.
+
+**Technique 18 — JS Edge Persistence**: added `direction_mu` (Δμ per state at each t) and
+`direction_tail` (Δq_α) outputs to `run()`, plus a new `inefficiency_map()` function that
+builds I(x) = JS̃(A(x)) as a spatial map across continuous state space.

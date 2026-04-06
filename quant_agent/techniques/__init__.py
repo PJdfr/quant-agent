@@ -1,22 +1,33 @@
-from . import (
+from .monitoring import (
     manifold_tube,
-    marchenko_pastur,
-    shape_correlation,
-    esscher_tilt,
     alpha_divergence,
     curvature_throttle,
-    grassmann_rotation,
-    correlation_clustering,
+    js_edge_persistence,
     path_speed,
-    option_density,
-    ridge_precision,
+    amari_chentsov,
+    mutual_information,
+)
+from .regime import (
+    correlation_clustering,
+    grassmann_rotation,
+    chernoff_classifier,
+    regime_backtest,
+)
+from .covariance import (
+    marchenko_pastur,
+    shape_correlation,
     partial_correlation,
     factor_covariance,
     factor_rotation,
-    regime_backtest,
+    ridge_precision,
+)
+from .tail_and_options import (
+    esscher_tilt,
+    option_density,
+    skew_dependence,
+)
+from .fitting import (
     curvature_penalized_fit,
     geodesic_macro_regression,
-    js_edge_persistence,
-    chernoff_classifier,
     volume_profile_manifold,
 )

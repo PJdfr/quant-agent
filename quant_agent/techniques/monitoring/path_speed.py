@@ -5,6 +5,12 @@ Fit a distribution to returns each day from a rolling window — each day is
 a point on the statistical manifold. Compute Fisher-Rao geodesic speed
 (first difference) and acceleration (second difference). Sudden speed spikes
 = regime transition. Sharp bends (triangle-defect curvature) = structural snap.
+
+Two modes:
+  'gaussian'  — parametric Gaussian fit, analytical Fisher-Rao distance
+  'histogram' — non-parametric discrete density, Bhattacharyya-form FR distance
+                d_FR(p, q) = 2 arccos(Σ_k √(p_k q_k))
+                Flag rule: flag_t = 1{D_t > Quantile_{1-α}(D_{t-M,...,t-1})}
 """
 
 import numpy as np
@@ -13,19 +19,21 @@ from dataclasses import dataclass
 
 @dataclass
 class PathSpeedResult:
-    times: np.ndarray
-    speed: np.ndarray          # vt = d(t, t-Δ)
-    acceleration: np.ndarray   # at = d(t,t-Δ) - d(t-Δ, t-2Δ)
-    curvature: np.ndarray      # κt (triangle defect) ≤ 0
-    dist: np.ndarray           # raw FR distances
-    alarm_speed: np.ndarray    # bool
-    alarm_curve: np.ndarray    # bool
-    tau_speed: float
-    tau_curve: float
+    times:        np.ndarray
+    speed:        np.ndarray   # vt = d(t, t-Δ)
+    acceleration: np.ndarray   # at = Δ speed
+    curvature:    np.ndarray   # κt (triangle defect) ≤ 0
+    dist:         np.ndarray   # raw FR distances
+    alarm_speed:  np.ndarray   # bool: speed > tau_speed
+    alarm_curve:  np.ndarray   # bool: curvature < tau_curve
+    alarm_flag:   np.ndarray   # bool: quantile-based flag (histogram mode)
+    tau_speed:    float
+    tau_curve:    float
+    mode:         str
 
 
 # ---------------------------------------------------------------------------
-# Core math (reuse Gaussian FR distance)
+# Core math
 # ---------------------------------------------------------------------------
 
 def _fr_distance_gaussian(mu1, sigma1, mu2, sigma2):
@@ -35,53 +43,92 @@ def _fr_distance_gaussian(mu1, sigma1, mu2, sigma2):
     return np.sqrt(2) * np.arccosh(arg)
 
 
+def _fr_distance_histogram(p: np.ndarray, q: np.ndarray) -> float:
+    """d_FR(p, q) = 2 arccos(Σ_k √(p_k q_k))  — square-root / Bhattacharyya form."""
+    p = np.maximum(p, 1e-12); p = p / p.sum()
+    q = np.maximum(q, 1e-12); q = q / q.sum()
+    bc = np.sum(np.sqrt(p * q))
+    return 2.0 * np.arccos(np.clip(bc, -1.0, 1.0))
+
+
+def _histogram_density(chunk: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    counts, _ = np.histogram(chunk, bins=edges)
+    p = counts.astype(float) + 1e-3
+    return p / p.sum()
+
+
 def _fit(chunk):
     return chunk.mean(), chunk.std(ddof=1) + 1e-8
 
 
-def run(returns: np.ndarray,
-        window: int = 40,
-        delta: int = 1,
+def run(returns:   np.ndarray,
+        window:    int   = 40,
+        delta:     int   = 1,
         tau_speed: float = 0.15,
-        tau_curve: float = -0.05) -> PathSpeedResult:
+        tau_curve: float = -0.05,
+        mode:      str   = "gaussian",
+        n_bins:    int   = 30,
+        flag_alpha: float = 0.05,
+        flag_lookback: int = 60) -> PathSpeedResult:
     """
     Parameters
     ----------
-    returns    : 1-D daily returns
-    window     : rolling window for distribution estimation
-    delta      : step size Δ for speed/acceleration
-    tau_speed  : alarm threshold for speed
-    tau_curve  : alarm threshold for curvature (negative = bend)
+    returns       : (T,) daily returns
+    window        : rolling window for distribution estimation
+    delta         : step size Δ for speed/acceleration
+    tau_speed     : threshold for speed alarm (gaussian mode)
+    tau_curve     : threshold for curvature alarm (gaussian mode, negative)
+    mode          : 'gaussian' (parametric) or 'histogram' (non-parametric)
+    n_bins        : number of histogram bins (histogram mode only)
+    flag_alpha    : tail quantile for regime-shift flag (histogram mode)
+    flag_lookback : history length M for quantile threshold (histogram mode)
     """
     T = len(returns)
-    thetas = []
 
-    for t in range(window, T):
-        mu, sigma = _fit(returns[t - window: t])
-        thetas.append((mu, sigma, t))
+    if mode == "histogram":
+        lo = np.percentile(returns, 1)
+        hi = np.percentile(returns, 99)
+        edges = np.linspace(lo, hi, n_bins + 1)
 
-    N = len(thetas)
-    # pairwise distances along time (sequential)
-    dists = []
-    for i in range(1, N):
-        m1, s1, _ = thetas[i - 1]
-        m2, s2, _ = thetas[i]
-        dists.append(_fr_distance_gaussian(m1, s1, m2, s2))
-    dists = np.array(dists)
+        densities = []
+        times_idx = []
+        for t in range(window, T):
+            p = _histogram_density(returns[t - window: t], edges)
+            densities.append(p)
+            times_idx.append(t)
 
-    # speed: vt = d(t, t-delta)
+        dists = np.array([
+            _fr_distance_histogram(densities[i - 1], densities[i])
+            for i in range(1, len(densities))
+        ])
+        times = np.array(times_idx[1:])
+
+    else:  # gaussian
+        thetas = []
+        for t in range(window, T):
+            mu, sigma = _fit(returns[t - window: t])
+            thetas.append((mu, sigma, t))
+
+        dists = np.array([
+            _fr_distance_gaussian(thetas[i-1][0], thetas[i-1][1],
+                                  thetas[i][0],   thetas[i][1])
+            for i in range(1, len(thetas))
+        ])
+        times = np.array([t for _, _, t in thetas[1:]])
+
     speed = dists.copy()
-
-    # acceleration: at = d(t, t-delta) - d(t-delta, t-2delta)
     accel = np.diff(speed, prepend=speed[0])
 
-    # triangle defect curvature: κt = d(t-2δ, t-2δ) - (d(t,t-δ) + d(t-δ,t-2δ))
-    # = dists[i-2] - (dists[i] + dists[i-1])  → ≤ 0 means curved
+    # triangle-defect curvature: κt = d_{t-2} − (d_t + d_{t-1}) ≤ 0 means curved
     kappa = np.zeros(len(dists))
     for i in range(2, len(dists)):
         kappa[i] = dists[i - 2] - (dists[i] + dists[i - 1])
 
-    times = np.array([t for _, _, t in thetas[1:]])
+    # quantile-based flag: flag_t = 1{D_t > Quantile_{1-alpha}(D_{t-M,...,t-1})}
+    flag = np.zeros(len(dists), dtype=bool)
+    for i in range(flag_lookback, len(dists)):
+        threshold = np.quantile(dists[i - flag_lookback: i], 1.0 - flag_alpha)
+        flag[i] = dists[i] > threshold
 
     return PathSpeedResult(
         times=times,
@@ -91,8 +138,10 @@ def run(returns: np.ndarray,
         dist=dists,
         alarm_speed=speed > tau_speed,
         alarm_curve=kappa < tau_curve,
+        alarm_flag=flag,
         tau_speed=tau_speed,
         tau_curve=tau_curve,
+        mode=mode,
     )
 
 
@@ -129,9 +178,11 @@ def demo():
     axes[1].plot(t, res.speed, color="darkorange", lw=1.5, label="Speed vt")
     axes[1].axhline(res.tau_speed, color="red", linestyle="--", label=f"τ_speed={res.tau_speed}")
     axes[1].fill_between(t, 0, res.speed, where=res.alarm_speed,
-                         alpha=0.3, color="red", label="Speed alarm")
+                         alpha=0.3, color="red", label="Speed alarm (threshold)")
+    axes[1].fill_between(t, 0, res.speed, where=res.alarm_flag,
+                         alpha=0.2, color="orange", label="Quantile flag (5%)")
     axes[1].set_ylabel("FR distance / step")
-    axes[1].set_title("Geodesic speed  vt = d(t, t-Δ)  — spike = regime transition")
+    axes[1].set_title(f"Geodesic speed  vt = d(t, t-Δ)  [mode={res.mode}]  — spike = regime transition")
     axes[1].legend(fontsize=8)
 
     axes[2].plot(t, res.acceleration, color="purple", lw=1.5, label="Acceleration at")
@@ -153,6 +204,7 @@ def demo():
     plt.close()
     print("[9] Path Speed — saved demos/output_09_path_speed.png")
     print(f"    Speed alarms: {res.alarm_speed.sum()}, curvature alarms: {res.alarm_curve.sum()}")
+    print(f"    Quantile flags: {res.alarm_flag.sum()}")
 
 
 if __name__ == "__main__":
